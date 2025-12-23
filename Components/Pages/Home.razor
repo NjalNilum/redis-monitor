@@ -1,0 +1,355 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using RedisMonitor.Services
+@using RedisMonitor.Models
+@inject RedisMonitorService MonitorService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<PageTitle>Redis Monitor</PageTitle>
+
+<div class="redis-monitor @(_settings.IsDarkMode ? "dark-mode" : "light-mode")">
+    <!-- Connection Settings Bar -->
+    <div class="settings-bar">
+        <div class="connection-controls">
+            <label>
+                Host:
+                <input type="text" @bind="_settings.Host" disabled="@_isConnected" class="input-field" />
+            </label>
+            <label>
+                Port:
+                <input type="number" @bind="_settings.Port" disabled="@_isConnected" class="input-field" />
+            </label>
+            @if (!_isConnected)
+            {
+                <button @onclick="ConnectAsync" class="btn btn-connect">Verbinden</button>
+            }
+            else
+            {
+                <button @onclick="DisconnectAsync" class="btn btn-disconnect">Trennen</button>
+            }
+            <span class="status-text">@_connectionStatus</span>
+        </div>
+        <div class="theme-toggle">
+            <label>
+                <input type="checkbox" @bind="_settings.IsDarkMode" @bind:after="StateHasChanged" />
+                Dark Mode
+            </label>
+            <label style="margin-left: 15px;">
+                <input type="checkbox" @bind="_settings.GroupByChannel" @bind:after="StateHasChanged" />
+                Nach Channel gruppieren
+            </label>
+            <label style="margin-left: 15px;">
+                <input type="checkbox" @bind="_autoScroll" @bind:after="StateHasChanged" />
+                Auto-Scroll
+            </label>
+        </div>
+    </div>
+
+    <!-- Filter Controls -->
+    <div class="filter-bar">
+        <div class="filter-group">
+            <label>
+                Include Filter (komma-getrennt):
+                <input type="text" @bind="_settings.IncludeFilter" placeholder="z.B. channel1, event" class="input-field filter-input" />
+            </label>
+        </div>
+        <div class="filter-group">
+            <label>
+                Exclude Filter (komma-getrennt):
+                <input type="text" @bind="_settings.ExcludeFilter" placeholder="z.B. debug, test" class="input-field filter-input" />
+            </label>
+        </div>
+        <div class="filter-group">
+            <label>
+                Max. Nachrichten pro Channel (10-10000):
+                <input type="number" @bind="_settings.MaxMessages" min="@RedisSettings.MinMessages" max="@RedisSettings.MaxMessagesLimit" class="input-field" />
+            </label>
+        </div>
+        <button @onclick="ClearMessages" class="btn btn-clear">Löschen</button>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="content-area">
+        @if (_settings.GroupByChannel)
+        {
+            <!-- Channel List (Left Side) -->
+            <div class="channel-list">
+                <div class="panel-header">
+                    <h3>Channels (@GetFilteredChannels().Count)</h3>
+                </div>
+                <div class="channel-items">
+                    @foreach (var channel in GetFilteredChannels())
+                    {
+                        var messageCount = GetFilteredMessagesForChannel(channel).Count;
+                        <div class="channel-item @(_selectedChannel == channel ? "selected" : "")" 
+                             @onclick="() => SelectChannel(channel)">
+                            <div class="channel-name">@channel</div>
+                            <div class="channel-count">@messageCount</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Message Display (Right Side) - Grouped -->
+            <div class="message-display">
+                <div class="panel-header">
+                    <h3>Messages - @_selectedChannel</h3>
+                    @if (!string.IsNullOrEmpty(_selectedChannel))
+                    {
+                        <button @onclick="CopyAllPayload" class="btn btn-copy">Alles kopieren</button>
+                    }
+                </div>
+                <div class="message-content" @ref="_messageContainer">
+                    @if (!string.IsNullOrEmpty(_selectedChannel))
+                    {
+                        var messages = GetFilteredMessagesForChannel(_selectedChannel);
+                        @foreach (var message in messages)
+                        {
+                            <div class="message-item">
+                                <div class="message-header">
+                                    <span class="message-time">@message.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                    <span class="message-channel">@message.Channel</span>
+                                </div>
+                                <div class="message-payload" @onclick="() => CopyToClipboard(message.FormattedPayload)">
+                                    <pre><code>@message.FormattedPayload</code></pre>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>Wählen Sie einen Channel aus der Liste links aus</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Chronological View (Two-Panel) -->
+            <!-- Message List (Left Side) -->
+            <div class="message-list">
+                <div class="panel-header">
+                    <h3>Alle Nachrichten (@GetFilteredAllMessages().Count)</h3>
+                </div>
+                <div class="message-items" @ref="_messageContainer">
+                    @{
+                        var allMessages = GetFilteredAllMessages();
+                    }
+                    @if (allMessages.Count > 0)
+                    {
+                        @foreach (var message in allMessages)
+                        {
+                            <div class="message-list-item @(_selectedMessage?.Timestamp == message.Timestamp && _selectedMessage?.Channel == message.Channel ? "selected" : "")"
+                                 @onclick="() => SelectMessage(message)">
+                                <div class="message-list-time">@message.Timestamp.ToString("HH:mm:ss.fff")</div>
+                                <div class="message-list-channel">@message.Channel</div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>Keine Nachrichten</p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Message Detail (Right Side) -->
+            <div class="message-display">
+                <div class="panel-header">
+                    <h3>Payload</h3>
+                    @if (_selectedMessage != null)
+                    {
+                        <button @onclick="() => CopyToClipboard(_selectedMessage.FormattedPayload)" class="btn btn-copy">Kopieren</button>
+                    }
+                </div>
+                <div class="message-detail-content">
+                    @if (_selectedMessage != null)
+                    {
+                        <div class="message-detail-header">
+                            <span class="message-time">@_selectedMessage.Timestamp.ToString("HH:mm:ss.fff")</span>
+                            <span class="message-channel">@_selectedMessage.Channel</span>
+                        </div>
+                        <div class="message-payload">
+                            <pre><code>@_selectedMessage.FormattedPayload</code></pre>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>Wählen Sie eine Nachricht aus der Liste links aus</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private RedisSettings _settings = new();
+    private bool _isConnected = false;
+    private string _connectionStatus = "Nicht verbunden";
+    private List<string> _channels = new();
+    private string _selectedChannel = string.Empty;
+    private RedisMessage? _selectedMessage = null;
+    private bool _autoScroll = true;
+    private ElementReference _messageContainer;
+
+    protected override void OnInitialized()
+    {
+        MonitorService.OnMessagesChanged += HandleMessagesChanged;
+        MonitorService.OnConnectionStatusChanged += HandleConnectionStatusChanged;
+    }
+
+    private async void HandleMessagesChanged()
+    {
+        _channels = MonitorService.GetChannels();
+        await InvokeAsync(StateHasChanged);
+        
+        // Auto-scroll to bottom if enabled
+        if (_autoScroll)
+        {
+            await Task.Delay(50);
+            await ScrollToBottom();
+        }
+    }
+
+    private async void HandleConnectionStatusChanged(string status)
+    {
+        _connectionStatus = status;
+        _isConnected = MonitorService.IsConnected;
+        await InvokeAsync(StateHasChanged);
+    }
+    
+    private List<string> GetFilteredChannels()
+    {
+        return _channels.Where(channel =>
+        {
+            var messages = MonitorService.GetMessages(channel);
+            return messages.Any(m => RedisMonitorService.MatchesFilter(m, _settings.IncludeFilter, _settings.ExcludeFilter));
+        }).ToList();
+    }
+    
+    private List<RedisMessage> GetFilteredMessagesForChannel(string channel)
+    {
+        var messages = MonitorService.GetMessages(channel);
+        return messages.Where(m => RedisMonitorService.MatchesFilter(m, _settings.IncludeFilter, _settings.ExcludeFilter)).ToList();
+    }
+    
+    private List<RedisMessage> GetFilteredAllMessages()
+    {
+        var messages = MonitorService.GetAllMessages();
+        return messages.Where(m => RedisMonitorService.MatchesFilter(m, _settings.IncludeFilter, _settings.ExcludeFilter)).ToList();
+    }
+
+    private async Task ConnectAsync()
+    {
+        try
+        {
+            await MonitorService.ConnectAsync(_settings);
+        }
+        catch (Exception ex)
+        {
+            _connectionStatus = $"Fehler: {ex.Message}";
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        await MonitorService.DisconnectAsync();
+        _channels.Clear();
+        _selectedChannel = string.Empty;
+    }
+
+    private void SelectChannel(string channel)
+    {
+        _selectedChannel = channel;
+        StateHasChanged();
+        if (_autoScroll)
+        {
+            Task.Delay(50).ContinueWith(_ => ScrollToBottom());
+        }
+    }
+
+    private void SelectMessage(RedisMessage message)
+    {
+        _selectedMessage = message;
+        StateHasChanged();
+    }
+
+    private void ClearMessages()
+    {
+        MonitorService.ClearMessages();
+        _channels.Clear();
+        _selectedChannel = string.Empty;
+        _selectedMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("redisMonitor.copyToClipboard", text);
+        }
+        catch (Exception)
+        {
+            // Silently fail if clipboard access is denied
+        }
+    }
+
+    private async Task CopyAllPayload()
+    {
+        if (string.IsNullOrEmpty(_selectedChannel)) return;
+        
+        var messages = GetFilteredMessagesForChannel(_selectedChannel);
+        var allPayload = string.Join("\n---\n", messages.Select(m => m.FormattedPayload));
+        
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("redisMonitor.copyToClipboard", allPayload);
+        }
+        catch (Exception)
+        {
+            // Silently fail if clipboard access is denied
+        }
+    }
+    
+    private async Task CopyAllPayloadChronological()
+    {
+        var messages = GetFilteredAllMessages();
+        var allPayload = string.Join("\n---\n", messages.Select(m => $"[{m.Timestamp:HH:mm:ss.fff}] {m.Channel}\n{m.FormattedPayload}"));
+        
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("redisMonitor.copyToClipboard", allPayload);
+        }
+        catch (Exception)
+        {
+            // Silently fail if clipboard access is denied
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("redisMonitor.scrollToBottom", _messageContainer);
+        }
+        catch (Exception)
+        {
+            // Silently fail
+        }
+    }
+
+    public void Dispose()
+    {
+        MonitorService.OnMessagesChanged -= HandleMessagesChanged;
+        MonitorService.OnConnectionStatusChanged -= HandleConnectionStatusChanged;
+    }
+}
