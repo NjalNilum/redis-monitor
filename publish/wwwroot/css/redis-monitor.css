@@ -408,7 +408,7 @@
 .message-payload {
     border-radius: 4px;
     padding: 10px;
-    cursor: pointer;
+    cursor: text;
     transition: opacity 0.2s;
 }
 
