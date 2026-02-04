@@ -199,6 +199,7 @@
     private RedisMessage? _selectedMessage = null;
     private bool _autoScroll = true;
     private ElementReference _messageContainer;
+    private int _lastVisibleCount = 0;
 
     protected override void OnInitialized()
     {
@@ -209,13 +210,38 @@
     private async void HandleMessagesChanged()
     {
         _channels = MonitorService.GetChannels();
+        
+        // Calculate current visible count before state change
+        int currentVisibleCount = GetCurrentVisibleMessageCount();
+        
         await InvokeAsync(StateHasChanged);
         
-        // Auto-scroll to bottom if enabled
-        if (_autoScroll)
+        // Auto-scroll if enabled and visible content increased
+        if (_autoScroll && currentVisibleCount > _lastVisibleCount)
         {
-            await Task.Delay(50);
+            _lastVisibleCount = currentVisibleCount;
+            await Task.Delay(100);
             await ScrollToBottom();
+        }
+        else
+        {
+            _lastVisibleCount = currentVisibleCount;
+        }
+    }
+    
+    private int GetCurrentVisibleMessageCount()
+    {
+        if (_settings.GroupByChannel)
+        {
+            // In grouped mode, only count messages for the selected channel
+            if (string.IsNullOrEmpty(_selectedChannel))
+                return 0;
+            return GetFilteredMessagesForChannel(_selectedChannel).Count;
+        }
+        else
+        {
+            // In chronological mode, count all filtered messages
+            return GetFilteredAllMessages().Count;
         }
     }
 
@@ -266,14 +292,15 @@
         _selectedChannel = string.Empty;
     }
 
-    private void SelectChannel(string channel)
+    private async void SelectChannel(string channel)
     {
         _selectedChannel = channel;
-        StateHasChanged();
-        if (_autoScroll)
-        {
-            Task.Delay(50).ContinueWith(_ => ScrollToBottom());
-        }
+        _lastVisibleCount = GetCurrentVisibleMessageCount();
+        await InvokeAsync(StateHasChanged);
+        
+        // Always scroll to bottom when selecting a channel (regardless of auto-scroll setting)
+        await Task.Delay(100);
+        await ScrollToBottom();
     }
 
     private void SelectMessage(RedisMessage message)
@@ -288,6 +315,7 @@
         _channels.Clear();
         _selectedChannel = string.Empty;
         _selectedMessage = null;
+        _lastVisibleCount = 0;
         StateHasChanged();
     }
 

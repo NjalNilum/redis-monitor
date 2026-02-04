@@ -5,7 +5,7 @@
 param(
     [string]$RedisHost = "localhost",
     [int]$Port = 6379,
-    [int]$Count = 20
+    [int]$Count = 100
 )
 
 Write-Host "Redis Monitor Test Script" -ForegroundColor Cyan
@@ -53,47 +53,145 @@ function Get-RandomAmount {
     return [Math]::Round((Get-Random -Minimum 10 -Maximum 500) + (Get-Random) * 0.99, 2)
 }
 
+function Send-RedisMessageViaCli {
+    param(
+        [string]$Channel,
+        [string]$Message
+    )
+    
+    try {
+        $result = redis-cli -h $RedisHost -p $Port PUBLISH $Channel $Message 2>&1
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Send-RedisMessageViaTcp {
+    param(
+        [string]$Channel,
+        [string]$Message
+    )
+    
+    try {
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $tcpClient.Connect($RedisHost, $Port)
+        $stream = $tcpClient.GetStream()
+        $writer = New-Object System.IO.StreamWriter($stream)
+        $reader = New-Object System.IO.StreamReader($stream)
+        
+        # Redis PUBLISH command: *3\r\n$7\r\nPUBLISH\r\n$<len>\r\n<channel>\r\n$<len>\r\n<message>\r\n
+        $channelBytes = [System.Text.Encoding]::UTF8.GetBytes($Channel)
+        $messageBytes = [System.Text.Encoding]::UTF8.GetBytes($Message)
+        
+        $command = "*3`r`n"
+        $command += "`$7`r`nPUBLISH`r`n"
+        $command += "`$$($channelBytes.Length)`r`n$Channel`r`n"
+        $command += "`$$($messageBytes.Length)`r`n$Message`r`n"
+        
+        $writer.Write($command)
+        $writer.Flush()
+        
+        # Read response
+        $response = $reader.ReadLine()
+        
+        $writer.Close()
+        $reader.Close()
+        $stream.Close()
+        $tcpClient.Close()
+        
+        return ($response -match "^:\d+")
+    }
+    catch {
+        return $false
+    }
+}
+
 function Send-RedisMessage {
     param(
         [string]$Channel,
         [string]$Message
     )
     
-    $escapedMessage = $Message -replace '"', '\"'
+    $success = $false
     
-    try {
-        $result = redis-cli -h $RedisHost -p $Port PUBLISH $Channel $Message 2>&1
+    if ($script:UseRedisCli) {
+        $success = Send-RedisMessageViaCli -Channel $Channel -Message $Message
+    }
+    else {
+        $success = Send-RedisMessageViaTcp -Channel $Channel -Message $Message
+    }
+    
+    if ($success) {
+        Write-Host "[✓] " -ForegroundColor Green -NoNewline
+        Write-Host "$Channel" -ForegroundColor Cyan -NoNewline
+        Write-Host " → " -NoNewline
         
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[✓] " -ForegroundColor Green -NoNewline
-            Write-Host "$Channel" -ForegroundColor Cyan -NoNewline
-            Write-Host " → " -NoNewline
-            
-            if ($Message.Length -gt 60) {
-                Write-Host ($Message.Substring(0, 60) + "...") -ForegroundColor Gray
-            } else {
-                Write-Host $Message -ForegroundColor Gray
-            }
+        if ($Message.Length -gt 60) {
+            Write-Host ($Message.Substring(0, 60) + "...") -ForegroundColor Gray
         } else {
-            Write-Host "[✗] Fehler bei $Channel" -ForegroundColor Red
+            Write-Host $Message -ForegroundColor Gray
         }
+    } else {
+        Write-Host "[✗] Fehler bei $Channel" -ForegroundColor Red
     }
-    catch {
-        Write-Host "[✗] Fehler: $_" -ForegroundColor Red
-    }
+}
+
+# Check if redis-cli is available
+$script:UseRedisCli = $false
+try {
+    $null = Get-Command redis-cli -ErrorAction Stop
+    $script:UseRedisCli = $true
+    Write-Host "[✓] redis-cli gefunden" -ForegroundColor Green
+}
+catch {
+    Write-Host "[!] redis-cli nicht gefunden - verwende TCP Verbindung" -ForegroundColor Yellow
 }
 
 # Test Redis Connection
 Write-Host "Teste Redis Verbindung..." -ForegroundColor Yellow
-$pingResult = redis-cli -h $RedisHost -p $Port PING 2>&1
 
-if ($LASTEXITCODE -ne 0) {
+try {
+    $tcpClient = New-Object System.Net.Sockets.TcpClient
+    $tcpClient.ReceiveTimeout = 3000
+    $tcpClient.SendTimeout = 3000
+    $tcpClient.Connect($RedisHost, $Port)
+    
+    if ($tcpClient.Connected) {
+        $stream = $tcpClient.GetStream()
+        $writer = New-Object System.IO.StreamWriter($stream)
+        $reader = New-Object System.IO.StreamReader($stream)
+        
+        # Send PING command
+        $writer.Write("*1`r`n`$4`r`nPING`r`n")
+        $writer.Flush()
+        
+        # Read response
+        $response = $reader.ReadLine()
+        
+        $writer.Close()
+        $reader.Close()
+        $stream.Close()
+        $tcpClient.Close()
+        
+        if ($response -eq "+PONG") {
+            Write-Host "[✓] Redis ist erreichbar auf ${RedisHost}:${Port}" -ForegroundColor Green
+        }
+        else {
+            throw "Ungültige Antwort von Redis: $response"
+        }
+    }
+    else {
+        throw "Verbindung konnte nicht hergestellt werden"
+    }
+}
+catch {
     Write-Host "[✗] Redis nicht erreichbar auf ${RedisHost}:${Port}" -ForegroundColor Red
+    Write-Host "Fehler: $_" -ForegroundColor Red
     Write-Host "Bitte stellen Sie sicher, dass Redis läuft." -ForegroundColor Yellow
     exit 1
 }
-
-Write-Host "[✓] Redis ist erreichbar" -ForegroundColor Green
 Write-Host ""
 Write-Host "Sende Test-Nachrichten..." -ForegroundColor Yellow
 Write-Host ""
