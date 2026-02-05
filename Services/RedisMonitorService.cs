@@ -23,18 +23,27 @@ public class RedisMonitorService : IDisposable
 
     public bool IsConnected => _redis?.IsConnected ?? false;
 
+    private void NotifyConnectionStatus(int attemptId, string status)
+    {
+        // Only notify if this attempt is still the current one
+        if (Volatile.Read(ref _connectAttemptId) == attemptId)
+        {
+            OnConnectionStatusChanged?.Invoke(status);
+        }
+    }
+
     public async Task ConnectAsync(RedisSettings settings)
     {
         _settings = settings;
         var attemptId = Interlocked.Increment(ref _connectAttemptId);
         Interlocked.Exchange(ref _cancelAttemptId, -1);
-        
+
         try
         {
             await DisconnectAsync();
-            
+
             _cts = new CancellationTokenSource();
-            
+
             var configOptions = new ConfigurationOptions
             {
                 EndPoints = { { settings.Host, settings.Port } },
@@ -47,7 +56,7 @@ public class RedisMonitorService : IDisposable
             if (IsCancelRequested(attemptId))
             {
                 await DisconnectAsync(notify: false);
-                OnConnectionStatusChanged?.Invoke("Verbindung abgebrochen");
+                NotifyConnectionStatus(attemptId, "Verbindung abgebrochen");
                 return;
             }
 
@@ -61,16 +70,24 @@ public class RedisMonitorService : IDisposable
             if (IsCancelRequested(attemptId))
             {
                 await DisconnectAsync(notify: false);
-                OnConnectionStatusChanged?.Invoke("Verbindung abgebrochen");
+                NotifyConnectionStatus(attemptId, "Verbindung abgebrochen");
                 return;
             }
 
-            OnConnectionStatusChanged?.Invoke($"Verbunden mit {settings.Host}:{settings.Port}");
+            NotifyConnectionStatus(attemptId, $"Verbunden mit {settings.Host}:{settings.Port}");
         }
         catch (Exception ex)
         {
-            OnConnectionStatusChanged?.Invoke($"Fehler: {ex.Message}");
-            throw;
+            // If this attempt was cancelled, swallow the exception so it doesn't
+            // override a later successful connection or notify the UI with a stale error.
+            if (IsCancelRequested(attemptId))
+            {
+                return;
+            }
+
+            // Only notify if this is still the current attempt; do not rethrow.
+            NotifyConnectionStatus(attemptId, $"Fehler: {ex.Message}");
+            return;
         }
     }
 
@@ -104,10 +121,10 @@ public class RedisMonitorService : IDisposable
             {
                 messages.RemoveAt(0);
             }
-            
+
             // Also add to all messages list
             _allMessages.Add(redisMessage);
-            
+
             // Apply retention policy for all messages
             if (_allMessages.Count > _settings.MaxMessages)
             {
@@ -123,9 +140,9 @@ public class RedisMonitorService : IDisposable
         try
         {
             var jsonDoc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions 
-            { 
-                WriteIndented = true 
+            return JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions
+            {
+                WriteIndented = true
             });
         }
         catch
@@ -146,12 +163,12 @@ public class RedisMonitorService : IDisposable
     {
         lock (_lockObject)
         {
-            return _messagesByChannel.ContainsKey(channel) 
-                ? new List<RedisMessage>(_messagesByChannel[channel]) 
+            return _messagesByChannel.ContainsKey(channel)
+                ? new List<RedisMessage>(_messagesByChannel[channel])
                 : new List<RedisMessage>();
         }
     }
-    
+
     public List<RedisMessage> GetAllMessages()
     {
         lock (_lockObject)
@@ -159,12 +176,12 @@ public class RedisMonitorService : IDisposable
             return new List<RedisMessage>(_allMessages);
         }
     }
-    
+
     public static bool MatchesFilter(RedisMessage message, string includeFilter, string excludeFilter)
     {
         var channelName = message.Channel;
         var payload = message.Payload;
-        
+
         // Apply include filter
         if (!string.IsNullOrWhiteSpace(includeFilter))
         {
@@ -219,7 +236,7 @@ public class RedisMonitorService : IDisposable
     public async Task DisconnectAsync(bool notify = true)
     {
         _cts?.Cancel();
-        
+
         if (_subscriber != null)
         {
             await _subscriber.UnsubscribeAllAsync();
