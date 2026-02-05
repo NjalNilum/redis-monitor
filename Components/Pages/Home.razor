@@ -22,7 +22,21 @@
             </label>
             @if (!_isConnected)
             {
-                <button @onclick="ConnectAsync" class="btn btn-connect">Verbinden</button>
+                <button @onclick="ConnectAsync" class="btn btn-connect" disabled="@_isConnecting">
+                    @if (_isConnecting)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>Verbinde...</span>
+                    }
+                    else
+                    {
+                        <span>Verbinden</span>
+                    }
+                </button>
+                @if (_isConnecting)
+                {
+                    <button @onclick="CancelConnectAsync" class="btn btn-disconnect" type="button">Abbrechen</button>
+                }
             }
             else
             {
@@ -193,6 +207,7 @@
 @code {
     private RedisSettings _settings = new();
     private bool _isConnected = false;
+    private bool _isConnecting = false;
     private string _connectionStatus = "Nicht verbunden";
     private List<string> _channels = new();
     private string _selectedChannel = string.Empty;
@@ -275,6 +290,11 @@
 
     private async Task ConnectAsync()
     {
+        if (_isConnecting) return; // Prevent multiple simultaneous connection attempts
+        
+        _isConnecting = true;
+        StateHasChanged();
+        
         try
         {
             await MonitorService.ConnectAsync(_settings);
@@ -283,6 +303,21 @@
         {
             _connectionStatus = $"Fehler: {ex.Message}";
         }
+        finally
+        {
+            _isConnecting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CancelConnectAsync()
+    {
+        if (!_isConnecting) return;
+        
+        _isConnecting = false;
+        StateHasChanged();
+        
+        await MonitorService.CancelConnectAsync();
     }
 
     private async Task DisconnectAsync()

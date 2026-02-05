@@ -2,6 +2,7 @@ using StackExchange.Redis;
 using RedisMonitor.Models;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Threading;
 
 namespace RedisMonitor.Services;
 
@@ -14,6 +15,8 @@ public class RedisMonitorService : IDisposable
     private readonly object _lockObject = new();
     private RedisSettings _settings = new();
     private CancellationTokenSource? _cts;
+    private int _connectAttemptId = 0;
+    private int _cancelAttemptId = -1;
 
     public event Action? OnMessagesChanged;
     public event Action<string>? OnConnectionStatusChanged;
@@ -23,6 +26,8 @@ public class RedisMonitorService : IDisposable
     public async Task ConnectAsync(RedisSettings settings)
     {
         _settings = settings;
+        var attemptId = Interlocked.Increment(ref _connectAttemptId);
+        Interlocked.Exchange(ref _cancelAttemptId, -1);
         
         try
         {
@@ -39,12 +44,26 @@ public class RedisMonitorService : IDisposable
             };
 
             _redis = await ConnectionMultiplexer.ConnectAsync(configOptions);
+            if (IsCancelRequested(attemptId))
+            {
+                await DisconnectAsync(notify: false);
+                OnConnectionStatusChanged?.Invoke("Verbindung abgebrochen");
+                return;
+            }
+
             _subscriber = _redis.GetSubscriber();
 
             await _subscriber.SubscribeAsync(RedisChannel.Pattern("*"), (channel, message) =>
             {
                 HandleRedisMessage(channel, message);
             });
+
+            if (IsCancelRequested(attemptId))
+            {
+                await DisconnectAsync(notify: false);
+                OnConnectionStatusChanged?.Invoke("Verbindung abgebrochen");
+                return;
+            }
 
             OnConnectionStatusChanged?.Invoke($"Verbunden mit {settings.Host}:{settings.Port}");
         }
@@ -181,7 +200,23 @@ public class RedisMonitorService : IDisposable
         OnMessagesChanged?.Invoke();
     }
 
-    public async Task DisconnectAsync()
+    public async Task CancelConnectAsync()
+    {
+        var attemptId = Volatile.Read(ref _connectAttemptId);
+        if (attemptId <= 0) return;
+
+        Interlocked.Exchange(ref _cancelAttemptId, attemptId);
+        _cts?.Cancel();
+        await DisconnectAsync(notify: false);
+        OnConnectionStatusChanged?.Invoke("Verbindung abgebrochen");
+    }
+
+    private bool IsCancelRequested(int attemptId)
+    {
+        return Volatile.Read(ref _cancelAttemptId) == attemptId;
+    }
+
+    public async Task DisconnectAsync(bool notify = true)
     {
         _cts?.Cancel();
         
@@ -198,7 +233,10 @@ public class RedisMonitorService : IDisposable
         }
 
         _subscriber = null;
-        OnConnectionStatusChanged?.Invoke("Getrennt");
+        if (notify)
+        {
+            OnConnectionStatusChanged?.Invoke("Getrennt");
+        }
     }
 
     public void Dispose()
