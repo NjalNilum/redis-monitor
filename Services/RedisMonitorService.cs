@@ -135,15 +135,19 @@ public class RedisMonitorService : IDisposable
         OnMessagesChanged?.Invoke();
     }
 
+
+    private JsonSerializerOptions options = new JsonSerializerOptions
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private string FormatJson(string json)
     {
         try
         {
             var jsonDoc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(jsonDoc, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
+            return JsonSerializer.Serialize(jsonDoc, options);
         }
         catch
         {
