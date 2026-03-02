@@ -4,7 +4,7 @@
 
 param(
     [string]$RedisHost = "localhost",
-    [int]$Port = 6379,
+    [int]$Port = 6380,
     [int]$Count = 100
 )
 

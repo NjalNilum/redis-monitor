@@ -6,7 +6,7 @@ public class RedisSettings
     public const int MaxMessagesLimit = 10000;
     
     public string Host { get; set; } = "localhost";
-    public int Port { get; set; } = 6379;
+    public int Port { get; set; } = 6380;
     public string IncludeFilter { get; set; } = string.Empty;
     public string ExcludeFilter { get; set; } = string.Empty;
     
