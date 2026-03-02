@@ -1,0 +1,338 @@
+@page "/"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using RedisSimulator.Models
+@using RedisSimulator.Services
+@inject RedisPublisherService PublisherService
+@inject IConfiguration Configuration
+@implements IDisposable
+
+<PageTitle>Redis Simulator</PageTitle>
+
+<div class="redis-monitor @(_settings.IsDarkMode ? "dark-mode" : "light-mode")">
+    <div class="settings-bar">
+        <div class="connection-controls">
+            <label>
+                Host:
+                <input type="text" @bind="_settings.Host" disabled="@_isConnected" class="input-field" />
+            </label>
+            <label>
+                Port:
+                <input type="number" @bind="_settings.Port" disabled="@_isConnected" class="input-field" />
+            </label>
+
+            @if (!_isConnected)
+            {
+                <button @onclick="ConnectAsync" class="btn btn-connect">Verbinden</button>
+            }
+            else
+            {
+                <button @onclick="DisconnectAsync" class="btn btn-disconnect">Trennen</button>
+            }
+
+            <span class="status-text">@_connectionStatus</span>
+        </div>
+
+        <div class="theme-toggle">
+            <label>
+                <input type="checkbox" @bind="_settings.IsDarkMode" @bind:after="StateHasChanged" />
+                Dark Mode
+            </label>
+        </div>
+    </div>
+
+    <div class="filter-bar simulator-form-bar">
+        <div class="filter-group channel-group">
+            <label>
+                Channel:
+                <input type="text" @bind="_channelName" placeholder="z.B. test-channel" class="input-field filter-input" />
+            </label>
+            <label>
+                Frequenz (ms):
+                <input type="number" @bind="_frequencyMs" min="10" class="input-field" />
+            </label>
+        </div>
+
+        <div class="filter-group payload-group">
+            <label>
+                Payload:
+                <textarea @bind="_payload" @bind:event="oninput" @bind:after="ValidatePayload" class="input-field payload-input" rows="8" placeholder='{"event":"demo","value":1}'></textarea>
+            </label>
+            <div class="json-status @(_isPayloadJsonValid ? "valid" : "invalid")">
+                @(_isPayloadJsonValid ? "JSON valide" : "JSON ungültig")
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_payloadValidationMessage))
+            {
+                <div class="validation-text">@_payloadValidationMessage</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_formattedPayloadPreview))
+            {
+                <div class="message-payload payload-preview">
+                    <pre><code>@_formattedPayloadPreview</code></pre>
+                </div>
+            }
+        </div>
+
+        <div class="publish-actions">
+            <button @onclick="PublishOnceAsync" class="btn btn-copy">Publish einmalig</button>
+            @if (!_isCycling)
+            {
+                <button @onclick="StartCycleAsync" class="btn btn-connect">Zyklisch starten</button>
+            }
+            else
+            {
+                <button @onclick="StopCycleAsync" class="btn btn-disconnect">Zyklisch stoppen</button>
+            }
+            <button @onclick="ClearMessages" class="btn btn-clear">Historie löschen</button>
+            <span class="status-text">@_cycleStatus</span>
+            @if (!string.IsNullOrWhiteSpace(_actionStatus))
+            {
+                <span class="status-text">@_actionStatus</span>
+            }
+        </div>
+    </div>
+
+    <div class="content-area">
+        <div class="message-list">
+            <div class="panel-header">
+                <h3>Publish Historie (@_messages.Count)</h3>
+            </div>
+            <div class="message-items">
+                @if (_messages.Count > 0)
+                {
+                    @foreach (var message in _messages)
+                    {
+                        <div class="message-list-item @(_selectedMessage == message ? "selected" : "")" @onclick="() => SelectMessage(message)">
+                            <div class="message-list-time">@message.Timestamp.ToString("HH:mm:ss.fff") @(message.IsCyclic ? "(zyklisch)" : "")</div>
+                            <div class="message-list-channel">@message.Channel</div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>Noch keine Nachrichten publisht</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="message-display">
+            <div class="panel-header">
+                <h3>Payload Detail</h3>
+            </div>
+            <div class="message-detail-content">
+                @if (_selectedMessage != null)
+                {
+                    <div class="message-detail-header">
+                        <span class="message-time">@_selectedMessage.Timestamp.ToString("HH:mm:ss.fff")</span>
+                        <span class="message-channel">@_selectedMessage.Channel</span>
+                    </div>
+                    <div class="message-payload">
+                        <pre><code>@_selectedMessage.FormattedPayload</code></pre>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>Wählen Sie links eine Nachricht aus</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly RedisSettings _settings = new();
+    private bool _isConnected;
+    private bool _isCycling;
+    private string _connectionStatus = "Nicht verbunden";
+    private string _cycleStatus = "Zyklischer Versand inaktiv";
+    private string _actionStatus = string.Empty;
+
+    private string _channelName = "test-channel";
+    private string _payload = "{\n  \"event\": \"heartbeat\",\n  \"source\": \"simulator\"\n}";
+    private int _frequencyMs = 1000;
+
+    private bool _isPayloadJsonValid;
+    private string _payloadValidationMessage = string.Empty;
+    private string _formattedPayloadPreview = string.Empty;
+
+    private List<PublishedMessage> _messages = new();
+    private PublishedMessage? _selectedMessage;
+
+    protected override void OnInitialized()
+    {
+        var configuredConnectionString = Configuration["RedisSettings:ConnectionString"];
+        _settings.ApplyConnectionString(configuredConnectionString);
+
+        PublisherService.OnConnectionStatusChanged += HandleConnectionStatusChanged;
+        PublisherService.OnCycleStatusChanged += HandleCycleStatusChanged;
+        PublisherService.OnMessagesChanged += HandleMessagesChanged;
+
+        _isConnected = PublisherService.IsConnected;
+        _isCycling = PublisherService.IsCycling;
+        ValidatePayload();
+    }
+
+    private async Task ConnectAsync()
+    {
+        await PublisherService.ConnectAsync(_settings);
+        _isConnected = PublisherService.IsConnected;
+        _actionStatus = string.Empty;
+    }
+
+    private async Task DisconnectAsync()
+    {
+        await PublisherService.DisconnectAsync();
+        _isConnected = PublisherService.IsConnected;
+        _isCycling = PublisherService.IsCycling;
+        _actionStatus = string.Empty;
+    }
+
+    private async Task PublishOnceAsync()
+    {
+        if (!EnsureConnectedAndChannel())
+        {
+            return;
+        }
+
+        try
+        {
+            await PublisherService.PublishAsync(_channelName, _payload, isCyclic: false);
+            _actionStatus = "Nachricht publisht";
+        }
+        catch (Exception ex)
+        {
+            _actionStatus = $"Fehler: {ex.Message}";
+        }
+    }
+
+    private async Task StartCycleAsync()
+    {
+        if (!EnsureConnectedAndChannel())
+        {
+            return;
+        }
+
+        if (!_isPayloadJsonValid)
+        {
+            _actionStatus = "Für zyklisches Senden muss die Payload valides JSON-Objekt sein.";
+            return;
+        }
+
+        try
+        {
+            await PublisherService.StartCyclicPublishAsync(_channelName, _payload, _frequencyMs);
+            _isCycling = PublisherService.IsCycling;
+            _actionStatus = "";
+        }
+        catch (Exception ex)
+        {
+            _actionStatus = $"Fehler: {ex.Message}";
+        }
+    }
+
+    private async Task StopCycleAsync()
+    {
+        await PublisherService.StopCyclicPublishAsync();
+        _isCycling = PublisherService.IsCycling;
+    }
+
+    private bool EnsureConnectedAndChannel()
+    {
+        if (!_isConnected)
+        {
+            _actionStatus = "Bitte zuerst verbinden.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(_channelName))
+        {
+            _actionStatus = "Bitte Channel angeben.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private void HandleMessagesChanged()
+    {
+        _messages = PublisherService.GetMessages();
+        if (_selectedMessage == null && _messages.Count > 0)
+        {
+            _selectedMessage = _messages[0];
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleConnectionStatusChanged(string status)
+    {
+        _connectionStatus = status;
+        _isConnected = PublisherService.IsConnected;
+        _isCycling = PublisherService.IsCycling;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleCycleStatusChanged(string status)
+    {
+        _cycleStatus = status;
+        _isCycling = PublisherService.IsCycling;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectMessage(PublishedMessage message)
+    {
+        _selectedMessage = message;
+    }
+
+    private void ClearMessages()
+    {
+        PublisherService.ClearMessages();
+        _messages.Clear();
+        _selectedMessage = null;
+    }
+
+    private void ValidatePayload()
+    {
+        _payloadValidationMessage = string.Empty;
+        _formattedPayloadPreview = string.Empty;
+        _isPayloadJsonValid = false;
+
+        if (string.IsNullOrWhiteSpace(_payload))
+        {
+            _payloadValidationMessage = "Payload ist leer.";
+            return;
+        }
+
+        try
+        {
+            var node = JsonNode.Parse(_payload);
+            if (node is JsonObject)
+            {
+                _isPayloadJsonValid = true;
+            }
+
+            _formattedPayloadPreview = node?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? _payload;
+            if (!_isPayloadJsonValid)
+            {
+                _payloadValidationMessage = "JSON ist valide, aber kein Objekt (für zyklisch ist ein Objekt nötig).";
+            }
+        }
+        catch (JsonException ex)
+        {
+            _payloadValidationMessage = ex.Message;
+            _formattedPayloadPreview = _payload;
+        }
+    }
+
+    public void Dispose()
+    {
+        PublisherService.OnConnectionStatusChanged -= HandleConnectionStatusChanged;
+        PublisherService.OnCycleStatusChanged -= HandleCycleStatusChanged;
+        PublisherService.OnMessagesChanged -= HandleMessagesChanged;
+    }
+}
