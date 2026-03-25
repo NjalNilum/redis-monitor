@@ -208,8 +208,20 @@
     display: flex;
     flex: 1;
     overflow: hidden;
-    gap: 10px;
     padding: 10px;
+}
+
+.split-view {
+    --primary-panel-width: 340px;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+}
+
+.split-view-chronological {
+    --primary-panel-width: 380px;
 }
 
 /* Channel List */
@@ -228,6 +240,48 @@
     flex-direction: column;
     border-radius: 4px;
     overflow: hidden;
+}
+
+.split-view > .channel-list,
+.split-view > .message-list {
+    width: var(--primary-panel-width);
+    flex: 0 0 var(--primary-panel-width);
+    min-width: 240px;
+    max-width: 70%;
+}
+
+.split-view > .message-display {
+    min-width: 0;
+}
+
+.panel-resizer {
+    position: relative;
+    flex: 0 0 12px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.panel-resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: rgba(0, 122, 204, 0.25);
+    transition: background-color 0.2s ease, width 0.2s ease;
+}
+
+.panel-resizer:hover::before,
+.panel-resizer.dragging::before {
+    width: 4px;
+    background: rgba(0, 122, 204, 0.65);
+}
+
+body.redis-monitor-resizing {
+    cursor: col-resize;
+    user-select: none;
 }
 
 .redis-monitor.dark-mode .message-list {
@@ -479,10 +533,23 @@
     .content-area {
         flex-direction: column;
     }
+
+    .split-view {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .panel-resizer {
+        display: none;
+    }
     
+    .split-view > .channel-list,
+    .split-view > .message-list,
     .channel-list,
     .message-list {
         width: 100%;
+        flex: 0 0 auto;
+        max-width: none;
         max-height: 200px;
     }
     

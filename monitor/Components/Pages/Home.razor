@@ -87,117 +87,133 @@
     <div class="content-area">
         @if (_settings.GroupByChannel)
         {
-            <!-- Channel List (Left Side) -->
-            <div class="channel-list">
-                <div class="panel-header">
-                    <h3>Channels (@GetFilteredChannels().Count)</h3>
-                </div>
-                <div class="channel-items">
-                    @foreach (var channel in GetFilteredChannels())
-                    {
-                        var messageCount = GetFilteredMessagesForChannel(channel).Count;
-                        <div class="channel-item @(_selectedChannel == channel ? "selected" : "")" 
-                             @onclick="() => SelectChannel(channel)">
-                            <div class="channel-name">@channel</div>
-                            <div class="channel-count">@messageCount</div>
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <!-- Message Display (Right Side) - Grouped -->
-            <div class="message-display">
-                <div class="panel-header">
-                    <h3>Messages - @_selectedChannel</h3>
-                    @if (!string.IsNullOrEmpty(_selectedChannel))
-                    {
-                        <button @onclick="CopyAllPayload" class="btn btn-copy">Alles kopieren</button>
-                    }
-                </div>
-                <div class="message-content" @ref="_messageContainer">
-                    @if (!string.IsNullOrEmpty(_selectedChannel))
-                    {
-                        var messages = GetFilteredMessagesForChannel(_selectedChannel);
-                        @foreach (var message in messages)
+            <div class="split-view split-view-grouped" @ref="_splitContainer">
+                <!-- Channel List (Left Side) -->
+                <div class="channel-list split-primary-panel" @ref="_primaryPanel">
+                    <div class="panel-header">
+                        <h3>Channels (@GetFilteredChannels().Count)</h3>
+                    </div>
+                    <div class="channel-items">
+                        @foreach (var channel in GetFilteredChannels())
                         {
-                            <div class="message-item">
-                                <div class="message-header">
-                                    <span class="message-time">@message.Timestamp.ToString("HH:mm:ss.fff")</span>
-                                    <span class="message-channel">@message.Channel</span>
-                                </div>
-                                <div class="message-payload" @onclick="() => CopyToClipboard(message.FormattedPayload)">
-                                    <pre><code>@message.FormattedPayload</code></pre>
-                                </div>
+                            var messageCount = GetFilteredMessagesForChannel(channel).Count;
+                            <div class="channel-item @(_selectedChannel == channel ? "selected" : "")"
+                                 @onclick="() => SelectChannel(channel)">
+                                <div class="channel-name">@channel</div>
+                                <div class="channel-count">@messageCount</div>
                             </div>
                         }
-                    }
-                    else
-                    {
-                        <div class="empty-state">
-                            <p>Wählen Sie einen Channel aus der Liste links aus</p>
-                        </div>
-                    }
+                    </div>
+                </div>
+
+                <div class="panel-resizer"
+                     @ref="_splitterHandle"
+                     role="separator"
+                     aria-label="Breite der Channel-Liste anpassen"
+                     title="Zum Anpassen nach links oder rechts ziehen"></div>
+
+                <!-- Message Display (Right Side) - Grouped -->
+                <div class="message-display">
+                    <div class="panel-header">
+                        <h3>Messages - @_selectedChannel</h3>
+                        @if (!string.IsNullOrEmpty(_selectedChannel))
+                        {
+                            <button @onclick="CopyAllPayload" class="btn btn-copy">Alles kopieren</button>
+                        }
+                    </div>
+                    <div class="message-content" @ref="_messageContainer">
+                        @if (!string.IsNullOrEmpty(_selectedChannel))
+                        {
+                            var messages = GetFilteredMessagesForChannel(_selectedChannel);
+                            @foreach (var message in messages)
+                            {
+                                <div class="message-item">
+                                    <div class="message-header">
+                                        <span class="message-time">@message.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                        <span class="message-channel">@message.Channel</span>
+                                    </div>
+                                    <div class="message-payload" @onclick="() => CopyToClipboard(message.FormattedPayload)">
+                                        <pre><code>@message.FormattedPayload</code></pre>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="empty-state">
+                                <p>Wählen Sie einen Channel aus der Liste links aus</p>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         }
         else
         {
-            <!-- Chronological View (Two-Panel) -->
-            <!-- Message List (Left Side) -->
-            <div class="message-list">
-                <div class="panel-header">
-                    <h3>Alle Nachrichten (@GetFilteredAllMessages().Count)</h3>
-                </div>
-                <div class="message-items" @ref="_messageContainer">
-                    @{
-                        var allMessages = GetFilteredAllMessages();
-                    }
-                    @if (allMessages.Count > 0)
-                    {
-                        @foreach (var message in allMessages)
+            <div class="split-view split-view-chronological" @ref="_splitContainer">
+                <!-- Chronological View (Two-Panel) -->
+                <!-- Message List (Left Side) -->
+                <div class="message-list split-primary-panel" @ref="_primaryPanel">
+                    <div class="panel-header">
+                        <h3>Alle Nachrichten (@GetFilteredAllMessages().Count)</h3>
+                    </div>
+                    <div class="message-items" @ref="_messageContainer">
+                        @{
+                            var allMessages = GetFilteredAllMessages();
+                        }
+                        @if (allMessages.Count > 0)
                         {
-                            <div class="message-list-item @(_selectedMessage?.Timestamp == message.Timestamp && _selectedMessage?.Channel == message.Channel ? "selected" : "")"
-                                 @onclick="() => SelectMessage(message)">
-                                <div class="message-list-time">@message.Timestamp.ToString("HH:mm:ss.fff")</div>
-                                <div class="message-list-channel">@message.Channel</div>
+                            @foreach (var message in allMessages)
+                            {
+                                <div class="message-list-item @(_selectedMessage?.Timestamp == message.Timestamp && _selectedMessage?.Channel == message.Channel ? "selected" : "")"
+                                     @onclick="() => SelectMessage(message)">
+                                    <div class="message-list-time">@message.Timestamp.ToString("HH:mm:ss.fff")</div>
+                                    <div class="message-list-channel">@message.Channel</div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="empty-state">
+                                <p>Keine Nachrichten</p>
                             </div>
                         }
-                    }
-                    else
-                    {
-                        <div class="empty-state">
-                            <p>Keine Nachrichten</p>
-                        </div>
-                    }
+                    </div>
                 </div>
-            </div>
 
-            <!-- Message Detail (Right Side) -->
-            <div class="message-display">
-                <div class="panel-header">
-                    <h3>Payload</h3>
-                    @if (_selectedMessage != null)
-                    {
-                        <button @onclick="() => CopyToClipboard(_selectedMessage.FormattedPayload)" class="btn btn-copy">Kopieren</button>
-                    }
-                </div>
-                <div class="message-detail-content">
-                    @if (_selectedMessage != null)
-                    {
-                        <div class="message-detail-header">
-                            <span class="message-time">@_selectedMessage.Timestamp.ToString("HH:mm:ss.fff")</span>
-                            <span class="message-channel">@_selectedMessage.Channel</span>
-                        </div>
-                        <div class="message-payload">
-                            <pre><code>@_selectedMessage.FormattedPayload</code></pre>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="empty-state">
-                            <p>Wählen Sie eine Nachricht aus der Liste links aus</p>
-                        </div>
-                    }
+                <div class="panel-resizer"
+                     @ref="_splitterHandle"
+                     role="separator"
+                     aria-label="Breite der Nachrichtenliste anpassen"
+                     title="Zum Anpassen nach links oder rechts ziehen"></div>
+
+                <!-- Message Detail (Right Side) -->
+                <div class="message-display">
+                    <div class="panel-header">
+                        <h3>Payload</h3>
+                        @if (_selectedMessage != null)
+                        {
+                            <button @onclick="() => CopyToClipboard(_selectedMessage.FormattedPayload)" class="btn btn-copy">Kopieren</button>
+                        }
+                    </div>
+                    <div class="message-detail-content">
+                        @if (_selectedMessage != null)
+                        {
+                            <div class="message-detail-header">
+                                <span class="message-time">@_selectedMessage.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                <span class="message-channel">@_selectedMessage.Channel</span>
+                            </div>
+                            <div class="message-payload">
+                                <pre><code>@_selectedMessage.FormattedPayload</code></pre>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="empty-state">
+                                <p>Wählen Sie eine Nachricht aus der Liste links aus</p>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         }
@@ -214,12 +230,25 @@
     private RedisMessage? _selectedMessage = null;
     private bool _autoScroll = true;
     private ElementReference _messageContainer;
+    private ElementReference _splitContainer;
+    private ElementReference _primaryPanel;
+    private ElementReference _splitterHandle;
     private int _lastVisibleCount = 0;
+    private bool? _lastRenderedGroupByChannel;
 
     protected override void OnInitialized()
     {
         MonitorService.OnMessagesChanged += HandleMessagesChanged;
         MonitorService.OnConnectionStatusChanged += HandleConnectionStatusChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender || _lastRenderedGroupByChannel != _settings.GroupByChannel)
+        {
+            _lastRenderedGroupByChannel = _settings.GroupByChannel;
+            await InitializeSplitterAsync();
+        }
     }
 
     private async void HandleMessagesChanged()
@@ -407,6 +436,31 @@
         catch (Exception)
         {
             // Silently fail
+        }
+    }
+
+    private async Task InitializeSplitterAsync()
+    {
+        try
+        {
+            var storageKey = _settings.GroupByChannel
+                ? "redis-monitor-grouped-panel-width"
+                : "redis-monitor-chronological-panel-width";
+            var defaultWidth = _settings.GroupByChannel ? 340 : 380;
+
+            await JSRuntime.InvokeVoidAsync(
+                "redisMonitor.initializeHorizontalSplitter",
+                _splitContainer,
+                _primaryPanel,
+                _splitterHandle,
+                storageKey,
+                defaultWidth,
+                240,
+                0.7);
+        }
+        catch (Exception)
+        {
+            // Silently fail if the splitter cannot be initialized
         }
     }
 
