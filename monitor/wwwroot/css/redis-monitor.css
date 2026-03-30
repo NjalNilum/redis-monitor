@@ -445,10 +445,23 @@ body.redis-monitor-resizing {
 
 .message-header {
     display: flex;
-    gap: 15px;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
     margin-bottom: 8px;
     font-size: 12px;
     opacity: 0.8;
+}
+
+.message-meta {
+    display: flex;
+    gap: 15px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.btn-copy-inline {
+    flex-shrink: 0;
 }
 
 .message-time {

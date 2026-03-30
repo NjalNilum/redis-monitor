@@ -6,4 +6,5 @@ public class RedisMessage
     public string Channel { get; set; } = string.Empty;
     public string Payload { get; set; } = string.Empty;
     public string FormattedPayload { get; set; } = string.Empty;
+    public string DisplayPayload { get; set; } = string.Empty;
 }

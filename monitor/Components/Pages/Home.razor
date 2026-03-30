@@ -8,6 +8,10 @@
 
 <PageTitle>Redis Monitor</PageTitle>
 
+@{
+    var bulkCopyTitle = $"Kopiert maximal {_maxClipboardMessages} neueste sichtbare Nachrichten.";
+}
+
 <div class="redis-monitor @(_settings.IsDarkMode ? "dark-mode" : "light-mode")">
     <!-- Connection Settings Bar -->
     <div class="settings-bar">
@@ -118,7 +122,7 @@
                         <h3>Messages - @_selectedChannel</h3>
                         @if (!string.IsNullOrEmpty(_selectedChannel))
                         {
-                            <button @onclick="CopyAllPayload" class="btn btn-copy">Alles kopieren</button>
+                            <button @onclick="CopyAllPayload" class="btn btn-copy" type="button" title="@bulkCopyTitle">Neueste kopieren</button>
                         }
                     </div>
                     <div class="message-content" @ref="_messageContainer">
@@ -129,11 +133,14 @@
                             {
                                 <div class="message-item">
                                     <div class="message-header">
-                                        <span class="message-time">@message.Timestamp.ToString("HH:mm:ss.fff")</span>
-                                        <span class="message-channel">@message.Channel</span>
+                                        <div class="message-meta">
+                                            <span class="message-time">@message.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                            <span class="message-channel">@message.Channel</span>
+                                        </div>
+                                        <button @onclick="() => CopyMessage(message)" class="btn btn-copy btn-copy-inline" type="button">Nachricht kopieren</button>
                                     </div>
-                                    <div class="message-payload" @onclick="() => CopyToClipboard(message.FormattedPayload)">
-                                        <pre><code>@message.FormattedPayload</code></pre>
+                                    <div class="message-payload">
+                                        <pre><code>@message.DisplayPayload</code></pre>
                                     </div>
                                 </div>
                             }
@@ -150,17 +157,19 @@
         }
         else
         {
+            var allMessages = GetFilteredAllMessages();
             <div class="split-view split-view-chronological" @ref="_splitContainer">
                 <!-- Chronological View (Two-Panel) -->
                 <!-- Message List (Left Side) -->
                 <div class="message-list split-primary-panel" @ref="_primaryPanel">
                     <div class="panel-header">
-                        <h3>Alle Nachrichten (@GetFilteredAllMessages().Count)</h3>
+                        <h3>Alle Nachrichten (@allMessages.Count)</h3>
+                        @if (allMessages.Count > 0)
+                        {
+                            <button @onclick="CopyAllPayloadChronological" class="btn btn-copy" type="button" title="@bulkCopyTitle">Neueste kopieren</button>
+                        }
                     </div>
                     <div class="message-items" @ref="_messageContainer">
-                        @{
-                            var allMessages = GetFilteredAllMessages();
-                        }
                         @if (allMessages.Count > 0)
                         {
                             @foreach (var message in allMessages)
@@ -193,7 +202,7 @@
                         <h3>Payload</h3>
                         @if (_selectedMessage != null)
                         {
-                            <button @onclick="() => CopyToClipboard(_selectedMessage.FormattedPayload)" class="btn btn-copy">Kopieren</button>
+                            <button @onclick="() => CopyMessage(_selectedMessage)" class="btn btn-copy" type="button">Nachricht kopieren</button>
                         }
                     </div>
                     <div class="message-detail-content">
@@ -204,7 +213,7 @@
                                 <span class="message-channel">@_selectedMessage.Channel</span>
                             </div>
                             <div class="message-payload">
-                                <pre><code>@_selectedMessage.FormattedPayload</code></pre>
+                                <pre><code>@_selectedMessage.DisplayPayload</code></pre>
                             </div>
                         }
                         else
@@ -221,6 +230,9 @@
 </div>
 
 @code {
+    private const int _maxClipboardMessages = 250;
+    private const string _clipboardSeparator = "\n---\n";
+
     private RedisSettings _settings = new();
     private bool _isConnected = false;
     private bool _isConnecting = false;
@@ -398,33 +410,45 @@
     private async Task CopyAllPayload()
     {
         if (string.IsNullOrEmpty(_selectedChannel)) return;
-        
-        var messages = GetFilteredMessagesForChannel(_selectedChannel);
-        var allPayload = string.Join("\n---\n", messages.Select(m => m.FormattedPayload));
-        
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("redisMonitor.copyToClipboard", allPayload);
-        }
-        catch (Exception)
-        {
-            // Silently fail if clipboard access is denied
-        }
+
+        await CopyMessagesToClipboard(GetFilteredMessagesForChannel(_selectedChannel));
     }
     
     private async Task CopyAllPayloadChronological()
     {
-        var messages = GetFilteredAllMessages();
-        var allPayload = string.Join("\n---\n", messages.Select(m => $"[{m.Timestamp:HH:mm:ss.fff}] {m.Channel}\n{m.FormattedPayload}"));
-        
-        try
+        await CopyMessagesToClipboard(GetFilteredAllMessages());
+    }
+
+    private Task CopyMessage(RedisMessage message)
+    {
+        return CopyToClipboard(FormatMessageForClipboard(message));
+    }
+
+    private async Task CopyMessagesToClipboard(IEnumerable<RedisMessage> messages)
+    {
+        var clipboardContent = BuildBulkClipboardContent(messages);
+        if (string.IsNullOrWhiteSpace(clipboardContent))
         {
-            await JSRuntime.InvokeVoidAsync("redisMonitor.copyToClipboard", allPayload);
+            return;
         }
-        catch (Exception)
-        {
-            // Silently fail if clipboard access is denied
-        }
+
+        await CopyToClipboard(clipboardContent);
+    }
+
+    private string BuildBulkClipboardContent(IEnumerable<RedisMessage> messages)
+    {
+        var newestMessages = messages
+            .Reverse()
+            .Take(_maxClipboardMessages)
+            .Reverse()
+            .Select(FormatMessageForClipboard);
+
+        return string.Join(_clipboardSeparator, newestMessages);
+    }
+
+    private static string FormatMessageForClipboard(RedisMessage message)
+    {
+        return $"[{message.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] {message.Channel}{Environment.NewLine}{message.FormattedPayload}";
     }
 
     private async Task ScrollToBottom()

@@ -1,6 +1,8 @@
 using StackExchange.Redis;
 using RedisMonitor.Models;
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 
@@ -8,6 +10,8 @@ namespace RedisMonitor.Services;
 
 public class RedisMonitorService : IDisposable
 {
+    private const int DisplayValueCharacterLimit = 150;
+
     private ConnectionMultiplexer? _redis;
     private ISubscriber? _subscriber;
     private readonly ConcurrentDictionary<string, List<RedisMessage>> _messagesByChannel = new();
@@ -97,13 +101,15 @@ public class RedisMonitorService : IDisposable
         var payload = message.ToString();
 
         var formattedPayload = FormatJson(payload);
+        var displayPayload = FormatDisplayPayload(payload);
 
         var redisMessage = new RedisMessage
         {
             Timestamp = DateTime.Now,
             Channel = channelName,
             Payload = payload,
-            FormattedPayload = formattedPayload
+            FormattedPayload = formattedPayload,
+            DisplayPayload = displayPayload
         };
 
         lock (_lockObject)
@@ -136,9 +142,15 @@ public class RedisMonitorService : IDisposable
     }
 
 
-    private JsonSerializerOptions options = new JsonSerializerOptions
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
     {
         WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    private readonly JsonWriterOptions _jsonWriterOptions = new JsonWriterOptions
+    {
+        Indented = true,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
@@ -147,12 +159,74 @@ public class RedisMonitorService : IDisposable
         try
         {
             var jsonDoc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(jsonDoc, options);
+            return JsonSerializer.Serialize(jsonDoc, _jsonSerializerOptions);
         }
         catch
         {
             return json;
         }
+    }
+
+    private string FormatDisplayPayload(string payload)
+    {
+        try
+        {
+            using var jsonDoc = JsonDocument.Parse(payload);
+            var buffer = new ArrayBufferWriter<byte>();
+            using var writer = new Utf8JsonWriter(buffer, _jsonWriterOptions);
+
+            WriteDisplayJson(writer, jsonDoc.RootElement);
+            writer.Flush();
+
+            return Encoding.UTF8.GetString(buffer.WrittenSpan);
+        }
+        catch
+        {
+            return TruncateStringValue(payload);
+        }
+    }
+
+    private void WriteDisplayJson(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteDisplayJson(writer, property.Value);
+                }
+                writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteDisplayJson(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+
+            case JsonValueKind.String:
+                writer.WriteStringValue(TruncateStringValue(element.GetString() ?? string.Empty));
+                break;
+
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
+
+    private static string TruncateStringValue(string value)
+    {
+        if (value.Length <= DisplayValueCharacterLimit)
+        {
+            return value;
+        }
+
+        return string.Concat(value.AsSpan(0, DisplayValueCharacterLimit), "...");
     }
 
     public List<string> GetChannels()
