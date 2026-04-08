@@ -46,7 +46,14 @@ execution plan, and implement the task with strong engineering judgment.
 ## Workflow
 
 ### Planning
-1. If the task is non-trivial (multi-file, architectural, or unclear), create a file named `%title%gamePlan.md`.
+1. If the task is non-trivial (multi-file, architectural, or unclear), create a file named 
+`YYYY-MM-DD-<topic>-gameplan.md`. If it already exists, update it with new insights if necessary. 
+This file should include:
+   - Context analysis (including Actual and Target Conditions, if not already existing. 
+   Pattern is `YYYY-MM-DD-<topic>-analysis.md`)
+   - A concrete, step-by-step plan
+   - Key decisions and trade-offs
+   - Open questions and uncertainties
 2. For small, localized tasks, perform inline planning.
 3. Write a concrete task list.
 4. Record open questions, uncertainties, trade-offs, and issues.
@@ -55,7 +62,8 @@ execution plan, and implement the task with strong engineering judgment.
 5. Work in small, verifiable increments.
 6. Update the plan if new insights emerge.
 7. Implement the task end-to-end.
-8. If a solution becomes unexpectedly complex or hard to test, pause and rethink the design approach before pushing forward.
+8. If a solution becomes unexpectedly complex or hard to test, pause and rethink the design approach before pushing 
+forward.
 
 ### Validation
 9. Write or update unit tests.
@@ -71,7 +79,7 @@ execution plan, and implement the task with strong engineering judgment.
 13. Fix inconsistencies in existing documentation.
 
 ### Completion
-14. If a game plan file was created, write a concise work log into `%title%gamePlan_done.md`.
+14. If a game plan file was created, write a concise work log into `YYYY-MM-DD-<topic>-gameplan_done.md`.
 
 ---
 
