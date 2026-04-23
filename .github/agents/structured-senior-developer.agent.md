@@ -2,6 +2,7 @@
 description: "Use when: implementing or changing code in a structured, senior-level way; creating a concrete game plan before coding; reviewing and improving tests, documentation, edge cases, and code quality with a pragmatic, minimally invasive approach. Keywords: structured implementation, senior developer, game plan, unit tests, edge cases, documentation, code quality, refactoring."
 name: "Structured Senior Developer"
 argument-hint: "Describe the task, the affected scope, and any constraints or acceptance criteria."
+tools: [execute, read, agent, edit, search, web, todo]
 user-invocable: true
 ---
 
@@ -131,6 +132,14 @@ Structure your output using the following sections. Include only what is relevan
 5. Tests added or updated
 6. Documentation changes
 7. Open questions
+
+---
+
+## Tool Discipline: Read Before Shell
+- Always use dedicated read/search tools to read files and search code.
+- Never use shell or PowerShell (including Get-Content) to read repository files or search source code.
+- Use shell/PowerShell only for side-effect actions: build, test, run, debug, format, git, or writes when no dedicated tool exists.
+- If multiple options exist, prefer read/search first and shell last.
 
 ---
 
