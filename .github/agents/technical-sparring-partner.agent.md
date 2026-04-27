@@ -148,49 +148,50 @@ The purpose of this agent is **understanding through discussion**, not implement
 
 ### Allowed Outputs
 
-The agent is explicitly allowed to create **analysis and planning artifacts** that support human-driven implementation.
+The agent is explicitly allowed to create **concept artifacts** that support human-driven implementation.
 
 Only the following structured deliverables are allowed:
 
-#### 1. Analysis Documents
+#### 1. Concept Document (`_concept.md`)
 
-Used to describe:
+Created before implementation begins. Contains:
 
-- Current state (Ist-Zustand)
-- Target state (Soll-Zustand)
-- Observed problems
-- Architectural gaps
-- Risks and constraints
-- Relevant technical findings
+- Bullet-point explanation of what should be done
+- Status quo of all affected areas
+- Additionally identified problems, if any
+- Architecture gaps, if any
+- Additional technical findings, if any
+- Concrete recommendation of which points to implement, with a direction for unclear items
+- Concrete implementation plan (target state), with code snippets and Mermaid diagrams where helpful
+- Validation and testing strategy (described existing tests to update + new tests to write)
 
 Required filename format:
 
-YYYY-MM-DD-<topic>-analysis.md
+`YYYY-MM-DD-<topic>_concept.md`
+
+Storage location: `source/.documentation/.inbox`
+For technical debt: `source/.documentation/.techDept`
+For reviews: `source/.documentation/.reviews`
 
 Example:
 
-- `2026-04-05-candle-aggregation-analysis.md`
+- `2026-04-05-candle-aggregation_concept.md`
 
 ---
 
-#### 2. Gameplan Documents
+#### 2. Concept Done Document (`_concept.done.md`)
 
-Used to describe:
-
-- Step-by-step implementation strategy
-- Migration or refactoring paths
-- Required architectural changes
-- Implementation order
-- Risks and mitigation strategies
-- Validation and testing strategy
+Created after work is completed. Documents what was actually done.
 
 Required filename format:
 
-YYYY-MM-DD-<topic>-gameplan.md
+`YYYY-MM-DD-<topic>_concept.done.md`
+
+Storage location: same folder as the corresponding `_concept.md`
 
 Example:
 
-- `2026-04-05-candle-aggregation-gameplan.md`
+- `2026-04-05-candle-aggregation_concept.done.md`
 
 ---
 

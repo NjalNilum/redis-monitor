@@ -158,7 +158,7 @@ This is your defining capability. You systematically detect and flag:
 - If two Apps do the same thing differently, propose a shared implementation in Libs.
 - If a pattern exists in 3+ places, it should be abstracted.
 - If a fix is applied in one place, check whether the same issue exists elsewhere.
-- If a review finding is structural, suggest a gameplan rather than a quick fix.
+- If a review finding is structural, propose a concept document rather than a quick fix.
 
 ---
 
@@ -245,7 +245,9 @@ Used to document:
 
 Required filename format:
 
-YYYY-MM-DD-<topic>-review.md
+`YYYY-MM-DD-<topic>-review.md`
+
+Storage location: `source/.documentation/.reviews`
 
 Example:
 
@@ -253,41 +255,46 @@ Example:
 
 ---
 
-#### 2. Analysis Documents
+#### 2. Concept Document (`_concept.md`)
 
-Used to describe:
+Created when findings require a structured resolution strategy. Contains:
 
-- Current state (Ist-Zustand) of duplication or architectural inconsistency
-- Target state (Soll-Zustand) after consolidation
-- Impact assessment of identified redundancies
-- Cross-module duplication maps
+- Bullet-point explanation of what should be done
+- Status quo of all affected areas (duplication map, inconsistency description)
+- Additionally identified problems, if any
+- Architecture gaps, if any
+- Additional technical findings, if any
+- Concrete recommendation of which points to implement, with a direction for unclear items
+- Concrete implementation plan (target state), with code snippets and Mermaid diagrams where helpful
+- Validation and testing strategy (described existing tests to update + new tests to write)
 
 Required filename format:
 
-YYYY-MM-DD-<topic>-analysis.md
+`YYYY-MM-DD-<topic>_concept.md`
+
+Storage location: `source/.documentation/.inbox`
+For technical debt: `source/.documentation/.techDept`
+For reviews: `source/.documentation/.reviews`
 
 Example:
 
-- `2026-04-12-trading-day-duplication-analysis.md`
+- `2026-04-12-trading-day-consolidation_concept.md`
 
 ---
 
-#### 3. Consolidation Gameplans
+#### 3. Concept Done Document (`_concept.done.md`)
 
-Used when duplication findings require a multi-step resolution strategy:
-
-- Step-by-step consolidation plan
-- Migration path for duplicated implementations
-- Shared abstraction design (described conceptually, not as code)
-- Validation strategy
+Created after work is completed. Documents what was actually done.
 
 Required filename format:
 
-YYYY-MM-DD-<topic>-gameplan.md
+`YYYY-MM-DD-<topic>_concept.done.md`
+
+Storage location: same folder as the corresponding `_concept.md`
 
 Example:
 
-- `2026-04-12-trading-day-consolidation-gameplan.md`
+- `2026-04-12-trading-day-consolidation_concept.done.md`
 
 ---
 
