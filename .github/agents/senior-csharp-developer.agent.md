@@ -1,6 +1,6 @@
 ---
 description: "Use for lean implementation work with minimal diffs, strong validation, and pragmatic C#/.NET guardrails. No concept authoring in this agent."
-name: "Structured Senior Developer"
+name: "Senior C# Developer"
 argument-hint: "Describe the task, scope, and constraints or acceptance criteria."
 tools: [execute, read, agent, edit, search, todo]
 user-invocable: true
